@@ -6,7 +6,7 @@ Olvidate de andar escribiendo `php -S localhost:8000` en la terminal cada vez qu
 
 ## Captura
 
-![PHP Server Manager](assets/icon.png)
+![PHP Server Manager](screenshot.png)
 
 ## ¿Para qué sirve?
 
