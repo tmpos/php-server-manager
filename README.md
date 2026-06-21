@@ -1,47 +1,64 @@
 # PHP Server Manager ⚡
 
-Una aplicación de escritorio hecha con Electron para gestionar servidores PHP y bases de datos localmente, al estilo Laragon.
+Una aplicación nativa para macOS que te permite gestionar servidores PHP y bases de datos locales desde una interfaz gráfica, similar a Laragon pero liviana y propia.
 
-## Características
+Olvidate de andar escribiendo `php -S localhost:8000` en la terminal cada vez que querés trabajar en un proyecto. Con esta app seleccionás la carpeta, elegís el proyecto, y lo servís al instante.
 
-- **Gestión de sitios PHP**: Agrega carpetas con proyectos PHP, inicia/detiene servidores con un clic
-- **PHP Built-in Server**: Cada sitio se sirve con `php -S` en un puerto único (8000-9000)
-- **Directorio configurable**: Apuntá a cualquier carpeta de tu sistema donde tengas proyectos
-- **Gestión de bases de datos**: Detecta MySQL/MariaDB/PostgreSQL instalados y permite iniciarlos/detenerlos
-- **System tray**: Acceso rápido desde la barra de menú
-- **Multiplataforma**: Compatible con macOS, Windows y Linux
+## Captura
+
+![PHP Server Manager](assets/icon.png)
+
+## ¿Para qué sirve?
+
+- **Servir proyectos PHP localmente** con el servidor incorporado de PHP (`php -S`)
+- **Tener varios proyectos a la vez**, cada uno en su propio puerto
+- **Iniciar/detener MySQL, MariaDB o PostgreSQL** desde la misma interfaz
+- **Desarrollar desde cualquier carpeta** — apuntás la app a donde tengas tus proyectos y listo
+
+## Cómo se usa (macOS)
+
+1. **Instalá PHP** (si no lo tenés):
+   ```bash
+   brew install php
+   ```
+
+2. **Descargá la app** desde [Releases](https://github.com/tmpos/php-server-manager/releases) (archivo `.dmg`)
+
+3. **Abrí el DMG** y arrastrá la app a la carpeta de Aplicaciones
+
+4. **Abrí la app** (si macOS te advierte, hacé Ctrl+click → Abrir)
+
+5. **Elegí tu carpeta de proyectos**:
+   - Hacé click en **Change Dir** (sidebar)
+   - Seleccioná la carpeta raíz donde tenés tus proyectos PHP
+   - Ejemplo: `~/Sites/`, `~/Desktop/proyectos/`, etc.
+
+6. **Iniciá un proyecto**:
+   - Hacé click en el nombre del proyecto en la lista
+   - Apretá **Start Server**
+   - Abrí `http://localhost:8000` en tu navegador
+
+7. **Para bases de datos**: si tenés MySQL o PostgreSQL instalado, la app lo detecta y podés iniciarlo desde la sección **Database** en el sidebar
 
 ## Requisitos
 
-- [PHP](https://www.php.net/downloads) instalado y accesible desde PATH
-- Opcional: [MySQL](https://dev.mysql.com/downloads/) / [MariaDB](https://mariadb.org/download/) / [PostgreSQL](https://www.postgresql.org/download/) para gestión de bases de datos
+- **macOS** (Intel o Apple Silicon)
+- **PHP** instalado (via `brew install php` o descarga manual)
+- Opcional: **MySQL** / **MariaDB** / **PostgreSQL** para gestión de bases de datos
 
-## Instalación
+## Development
 
-### macOS (DMG)
-Descargar el último `.dmg` de [Releases](https://github.com/tomataveras/php-server-manager/releases) y arrastrar a Aplicaciones.
-
-### Desde código
 ```bash
-git clone https://github.com/tomataveras/php-server-manager.git
+git clone https://github.com/tmpos/php-server-manager.git
 cd php-server-manager
 npm install
-npm start
+npm run dev
 ```
-
-## Uso
-
-1. Abrí la app
-2. Hacé click en **Change Dir** para elegir la carpeta con tus proyectos PHP
-3. Seleccioná un proyecto de la lista
-4. Apretá **Start Server**
-5. Accedé desde el navegador en `http://localhost:PUERTO`
 
 ## Build
 
 ```bash
-npm run build          # Solo macOS
-npm run build:all      # macOS + Windows + Linux
+npm run build       # Genera el .dmg en dist/
 ```
 
 ## Licencia
