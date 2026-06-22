@@ -66,6 +66,69 @@
         </div>
       </div>
 
+      <div class="db-manager hidden" id="db-manager-view">
+        <div class="db-manager-header">
+          <button class="btn btn-back" id="db-back-btn">← Back</button>
+          <h2>MySQL Manager</h2>
+          <span class="db-connection-info" id="db-connection-info">localhost:3306</span>
+        </div>
+
+        <div class="db-toolbar">
+          <select class="db-select" id="db-select">
+            <option value="">— Select database —</option>
+          </select>
+          <button class="btn btn-small btn-primary" id="db-create-btn">+ Create DB</button>
+          <button class="btn btn-small btn-danger-outline" id="db-delete-btn">✕ Drop DB</button>
+          <button class="btn btn-small" id="db-import-db-btn">Import SQL</button>
+          <button class="btn btn-small" id="db-refresh-btn">🔄 Refresh</button>
+        </div>
+
+        <div class="db-body">
+          <div class="db-explorer-panel" id="db-explorer-panel">
+            <div class="db-explorer-header">
+              <span>Tables</span>
+              <button class="btn btn-tiny btn-primary db-explorer-add-btn" id="db-new-table-btn" title="New table">+</button>
+            </div>
+            <div class="db-table-list" id="db-table-list">
+              <div class="db-empty">Select a database</div>
+            </div>
+          </div>
+
+          <div class="db-content-panel">
+            <div class="db-query-editor">
+              <textarea class="db-query-textarea" id="db-query-input" placeholder="Enter SQL query... (Ctrl+Enter to run)" spellcheck="false">SELECT * FROM </textarea>
+              <div class="db-query-actions">
+                <button class="btn btn-primary btn-small" id="db-run-btn">▶ Run</button>
+                <button class="btn btn-small" id="db-clear-btn">Clear</button>
+              </div>
+            </div>
+
+            <div class="db-results-section">
+              <div class="db-results-header">
+                <div class="db-results-tabs" id="db-results-tabs">
+                  <span class="db-results-tab active" data-tab="data">Data</span>
+                  <span class="db-results-tab" data-tab="structure">Structure</span>
+                </div>
+                <span class="db-results-info" id="db-results-info"></span>
+              </div>
+              <div class="db-table-actions hidden" id="db-table-actions">
+                <button class="btn btn-small btn-primary" id="db-insert-row-btn">+ Insert Row</button>
+                <button class="btn btn-small" id="db-export-btn">Export</button>
+                <button class="btn btn-small btn-danger" id="db-drop-table-btn">Drop Table</button>
+                <button class="btn btn-small btn-danger-outline" id="db-truncate-btn">Truncate</button>
+                <button class="btn btn-small" id="db-reset-ai-btn">Reset AI</button>
+                <button class="btn btn-small" id="db-import-sql-btn">Import SQL</button>
+                <span class="db-actions-sep"></span>
+                <button class="btn btn-small btn-primary" id="db-add-col-btn">+ Add Column</button>
+              </div>
+              <div class="db-results-table-wrapper" id="db-results-wrapper">
+                <div class="db-results-empty">Run a query to see results</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="site-detail hidden" id="site-detail-view">
         <div class="site-detail-header">
           <button class="btn btn-back" id="back-btn">← Back</button>
@@ -131,6 +194,155 @@
       <div class="modal-actions">
         <button class="btn" id="modal-cancel">Cancel</button>
         <button class="btn btn-primary" id="modal-create">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="create-db-modal">
+    <div class="modal">
+      <h3>Create Database</h3>
+      <input type="text" id="new-db-name" placeholder="database_name" />
+      <div class="modal-actions">
+        <button class="btn" id="db-modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="db-modal-create">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="add-column-modal">
+    <div class="modal modal-lg">
+      <h3>Add Column</h3>
+      <div class="form-row">
+        <label class="form-label">Column name</label>
+        <input type="text" id="ac-col-name" placeholder="column_name" class="form-input" />
+      </div>
+      <div class="form-row">
+        <label class="form-label">Type</label>
+        <select id="ac-col-type" class="form-select">
+          <option value="INT">INT</option>
+          <option value="BIGINT">BIGINT</option>
+          <option value="TINYINT">TINYINT</option>
+          <option value="SMALLINT">SMALLINT</option>
+          <option value="MEDIUMINT">MEDIUMINT</option>
+          <option value="VARCHAR" selected>VARCHAR</option>
+          <option value="CHAR">CHAR</option>
+          <option value="TEXT">TEXT</option>
+          <option value="MEDIUMTEXT">MEDIUMTEXT</option>
+          <option value="LONGTEXT">LONGTEXT</option>
+          <option value="FLOAT">FLOAT</option>
+          <option value="DOUBLE">DOUBLE</option>
+          <option value="DECIMAL">DECIMAL</option>
+          <option value="BOOLEAN">BOOLEAN</option>
+          <option value="DATE">DATE</option>
+          <option value="DATETIME">DATETIME</option>
+          <option value="TIMESTAMP">TIMESTAMP</option>
+          <option value="BLOB">BLOB</option>
+          <option value="JSON">JSON</option>
+          <option value="ENUM">ENUM</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Length / Values</label>
+        <input type="text" id="ac-col-length" placeholder="255" class="form-input" />
+      </div>
+      <div class="ac-checks">
+        <label class="ct-check-label"><input type="checkbox" id="ac-col-null" checked /> NULL</label>
+        <label class="ct-check-label"><input type="checkbox" id="ac-col-unsigned" /> UNSIGNED</label>
+        <label class="ct-check-label"><input type="checkbox" id="ac-col-ai" /> AUTO_INCREMENT</label>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Default value</label>
+        <input type="text" id="ac-col-default" placeholder="(leave empty for none)" class="form-input" />
+      </div>
+      <div class="form-row">
+        <label class="form-label">Position</label>
+        <select id="ac-col-after" class="form-select">
+          <option value="">At end (default)</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="ac-cancel">Cancel</button>
+        <button class="btn btn-primary" id="ac-create">Add Column</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="data-form-modal">
+    <div class="modal modal-lg">
+      <h3 id="df-title">Insert Row</h3>
+      <div class="df-form" id="df-form"></div>
+      <div class="modal-actions">
+        <button class="btn" id="df-cancel">Cancel</button>
+        <button class="btn btn-primary" id="df-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="import-file-input" accept=".sql" style="display:none" />
+
+  <div class="modal-overlay hidden" id="confirm-modal">
+    <div class="modal">
+      <h3 id="confirm-title">Confirm</h3>
+      <p id="confirm-message">Are you sure?</p>
+      <div class="modal-actions">
+        <button class="btn" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="create-table-modal">
+    <div class="modal modal-lg">
+      <h3>Create Table</h3>
+      <div class="form-row">
+        <label class="form-label">Table name</label>
+        <input type="text" id="ct-table-name" placeholder="users" class="form-input" />
+      </div>
+      <div class="ct-columns-header">
+        <span>Columns</span>
+        <button class="btn btn-small btn-primary" id="ct-add-col-btn">+ Add Column</button>
+      </div>
+      <div class="ct-columns-list" id="ct-columns-list">
+        <div class="ct-column-row" data-index="0">
+          <div class="ct-col-fields">
+            <input type="text" class="ct-col-name form-input-sm" placeholder="name" />
+            <select class="ct-col-type form-select-sm">
+              <option value="INT">INT</option>
+              <option value="BIGINT">BIGINT</option>
+              <option value="TINYINT">TINYINT</option>
+              <option value="SMALLINT">SMALLINT</option>
+              <option value="MEDIUMINT">MEDIUMINT</option>
+              <option value="VARCHAR" selected>VARCHAR</option>
+              <option value="CHAR">CHAR</option>
+              <option value="TEXT">TEXT</option>
+              <option value="MEDIUMTEXT">MEDIUMTEXT</option>
+              <option value="LONGTEXT">LONGTEXT</option>
+              <option value="FLOAT">FLOAT</option>
+              <option value="DOUBLE">DOUBLE</option>
+              <option value="DECIMAL">DECIMAL</option>
+              <option value="BOOLEAN">BOOLEAN</option>
+              <option value="DATE">DATE</option>
+              <option value="DATETIME">DATETIME</option>
+              <option value="TIMESTAMP">TIMESTAMP</option>
+              <option value="BLOB">BLOB</option>
+              <option value="JSON">JSON</option>
+              <option value="ENUM">ENUM</option>
+            </select>
+            <input type="text" class="ct-col-length form-input-sm" placeholder="Length" value="255" />
+          </div>
+          <div class="ct-col-checks">
+            <label class="ct-check-label"><input type="checkbox" class="ct-col-null" checked /> NULL</label>
+            <label class="ct-check-label"><input type="checkbox" class="ct-col-pk" /> PK</label>
+            <label class="ct-check-label"><input type="checkbox" class="ct-col-ai" /> AI</label>
+            <label class="ct-check-label"><input type="checkbox" class="ct-col-unsigned" /> UNSIGNED</label>
+            <input type="text" class="ct-col-default form-input-sm" placeholder="Default" />
+          </div>
+          <button class="btn btn-tiny btn-danger-outline ct-col-remove" title="Remove column">✕</button>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="ct-cancel">Cancel</button>
+        <button class="btn btn-primary" id="ct-create">Create Table</button>
       </div>
     </div>
   </div>

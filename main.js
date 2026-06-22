@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, dialog, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn, execSync, execFileSync } = require('child_process');
+const { spawn, execFile, execSync, execFileSync } = require('child_process');
+const { Transform } = require('stream');
 const os = require('os');
 
 const PLATFORM = os.platform();
@@ -426,6 +427,96 @@ function stopAllDatabases() {
   return Promise.all(Object.keys(runningDatabases).map(d => stopDatabase(d)));
 }
 
+// --- MySQL Query Execution ---
+
+function getMysqlClient() {
+  return detectedDatabases.find(d => (d.type === 'mysql' || d.type === 'mariadb') && d.status === 'running');
+}
+
+function getMysqlConnectionArgs() {
+  const db = getMysqlClient();
+  if (!db) return null;
+  const socket = '/tmp/mysql.sock';
+  const args = ['-u', 'root', `--socket=${socket}`];
+  if (PLATFORM === 'win32') {
+    return ['-u', 'root', '--host=127.0.0.1', `--port=${db.port}`];
+  }
+  return args;
+}
+
+function mysqlQuery(query) {
+  return new Promise((resolve, reject) => {
+    const db = getMysqlClient();
+    if (!db) return reject({ error: 'MySQL/MariaDB is not running' });
+
+    const args = getMysqlConnectionArgs();
+    if (!args) return reject({ error: 'Could not determine MySQL connection' });
+
+    const fullArgs = [...args, '-e', query, '--batch'];
+    execFile(db.clientPath, fullArgs, { encoding: 'utf8', timeout: 30000 }, (err, stdout, stderr) => {
+      if (err) {
+        const msg = stderr ? stderr.trim() : err.message;
+        return reject({ error: msg || 'Query execution failed' });
+      }
+
+      const upper = query.trim().toUpperCase();
+      const isDataQuery = upper.startsWith('SELECT') || upper.startsWith('SHOW') ||
+                          upper.startsWith('DESCRIBE') || upper.startsWith('EXPLAIN') ||
+                          upper.startsWith('WITH');
+
+      if (!stdout || stdout.trim() === '') {
+        return resolve({ type: 'ok', affectedRows: 0, raw: '' });
+      }
+
+      const trimmed = stdout.trimEnd();
+      if (isDataQuery) {
+        const lines = trimmed.split('\n');
+        if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
+          return resolve({ type: 'empty', headers: [], rows: [] });
+        }
+        const headers = lines[0].split('\t');
+        const rows = lines.slice(1).map(line => {
+          if (line.trim() === '') return null;
+          const values = line.split('\t');
+          const row = {};
+          headers.forEach((h, i) => {
+            row[h] = i < values.length ? (values[i] === 'NULL' ? null : values[i]) : null;
+          });
+          return row;
+        }).filter(r => r !== null);
+
+        return resolve({ type: 'select', headers, rows });
+      }
+
+      return resolve({ type: 'ok', affectedRows: 0, raw: trimmed });
+    });
+  });
+}
+
+function mysqlListDatabases() {
+  return mysqlQuery('SHOW DATABASES');
+}
+
+function mysqlCreateDatabase(name) {
+  return mysqlQuery(`CREATE DATABASE \`${name}\``);
+}
+
+function mysqlDeleteDatabase(name) {
+  return mysqlQuery(`DROP DATABASE IF EXISTS \`${name}\``);
+}
+
+function mysqlListTables(database) {
+  return mysqlQuery(`SHOW TABLES FROM \`${database}\``);
+}
+
+function mysqlDescribeTable(database, table) {
+  return mysqlQuery(`DESCRIBE \`${database}\`.\`${table}\``);
+}
+
+function mysqlGetTableData(database, table, limit = 100) {
+  return mysqlQuery(`SELECT * FROM \`${database}\`.\`${table}\` LIMIT ${limit}`);
+}
+
 function openInBrowser(url) {
   shell.openExternal(url).catch(() => {});
 }
@@ -639,6 +730,330 @@ ipcMain.handle('install-database', async (event, dbType) => {
     return { success: true };
   } catch (e) {
     return { success: false, error: `Installation failed: ${e.message}` };
+  }
+});
+
+ipcMain.handle('db-execute-query', async (event, query) => {
+  try {
+    const result = await mysqlQuery(query);
+    return { success: true, ...result };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Query failed' };
+  }
+});
+
+ipcMain.handle('db-list-databases', async () => {
+  try {
+    const result = await mysqlListDatabases();
+    return { success: true, ...result };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to list databases' };
+  }
+});
+
+ipcMain.handle('db-create-database', async (event, name) => {
+  try {
+    const result = await mysqlCreateDatabase(name);
+    return { success: true, ...result };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to create database' };
+  }
+});
+
+ipcMain.handle('db-delete-database', async (event, name) => {
+  try {
+    const result = await mysqlDeleteDatabase(name);
+    return { success: true, ...result };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to delete database' };
+  }
+});
+
+ipcMain.handle('db-list-tables', async (event, database) => {
+  try {
+    const result = await mysqlListTables(database);
+    return { success: true, ...result };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to list tables' };
+  }
+});
+
+ipcMain.handle('db-describe-table', async (event, database, table) => {
+  try {
+    const result = await mysqlDescribeTable(database, table);
+    return { success: true, ...result };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to describe table' };
+  }
+});
+
+ipcMain.handle('db-get-table-data', async (event, database, table, limit) => {
+  try {
+    const result = await mysqlGetTableData(database, table, limit || 100);
+    return { success: true, ...result };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to get table data' };
+  }
+});
+
+ipcMain.handle('db-create-table', async (event, database, tableName, columns) => {
+  try {
+    const db = getMysqlClient();
+    if (!db) return { success: false, error: 'MySQL/MariaDB is not running' };
+
+    if (!columns || columns.length === 0) {
+      return { success: false, error: 'At least one column is required' };
+    }
+
+    const colDefs = columns.map(col => {
+      const parts = [`\`${col.name}\``, col.type];
+
+      if (col.length && ['varchar','char','int','tinyint','smallint','mediumint','bigint','decimal','float','double','enum','set'].includes(col.type.toLowerCase())) {
+        parts[1] = `${col.type}(${col.length})`;
+      }
+
+      if (col.unsigned) parts.push('UNSIGNED');
+      if (col.notNull) parts.push('NOT NULL');
+      if (col.autoIncrement) parts.push('AUTO_INCREMENT');
+      if (col.defaultValue !== undefined && col.defaultValue !== '') {
+        const dv = col.defaultValue.toUpperCase() === 'NULL' ? 'NULL' : `'${col.defaultValue.replace(/'/g, "\\'")}'`;
+        parts.push(`DEFAULT ${dv}`);
+      }
+
+      return parts.join(' ');
+    });
+
+    const primaryKey = columns.filter(c => c.primaryKey).map(c => `\`${c.name}\``);
+    if (primaryKey.length > 0) {
+      colDefs.push(`PRIMARY KEY (${primaryKey.join(', ')})`);
+    }
+
+    const sql = `CREATE TABLE \`${database}\`.\`${tableName}\` (\n  ${colDefs.join(',\n  ')}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`;
+
+    const result = await mysqlQuery(sql);
+    return { success: true, ...result, sql };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to create table' };
+  }
+});
+
+function buildColumnDef(col) {
+  const parts = [`\`${col.name}\``, col.type];
+  if (col.length && ['varchar','char','int','tinyint','smallint','mediumint','bigint','decimal','float','double','enum','set'].includes(col.type.toLowerCase())) {
+    parts[1] = `${col.type}(${col.length})`;
+  }
+  if (col.unsigned) parts.push('UNSIGNED');
+  if (col.notNull) parts.push('NOT NULL');
+  if (col.autoIncrement) parts.push('AUTO_INCREMENT');
+  if (col.defaultValue !== undefined && col.defaultValue !== '') {
+    const dv = col.defaultValue.toUpperCase() === 'NULL' ? 'NULL' : `'${col.defaultValue.replace(/'/g, "\\'")}'`;
+    parts.push(`DEFAULT ${dv}`);
+  }
+  return parts.join(' ');
+}
+
+ipcMain.handle('db-add-column', async (event, database, table, column) => {
+  try {
+    const def = buildColumnDef(column);
+    const sql = `ALTER TABLE \`${database}\`.\`${table}\` ADD COLUMN ${def}`;
+    const result = await mysqlQuery(sql);
+    return { success: true, ...result, sql };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to add column' };
+  }
+});
+
+ipcMain.handle('db-drop-column', async (event, database, table, columnName) => {
+  try {
+    const sql = `ALTER TABLE \`${database}\`.\`${table}\` DROP COLUMN \`${columnName}\``;
+    const result = await mysqlQuery(sql);
+    return { success: true, ...result, sql };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to drop column' };
+  }
+});
+
+function escapeSql(val) {
+  if (val === null || val === undefined) return 'NULL';
+  return `'${String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+ipcMain.handle('db-insert-row', async (event, database, table, data) => {
+  try {
+    const entries = Object.entries(data).filter(([, v]) => v !== '__omit__' && v !== '');
+    if (entries.length === 0) return { success: false, error: 'No data to insert' };
+    const cols = entries.map(([k]) => `\`${k}\``).join(', ');
+    const vals = entries.map(([, v]) => escapeSql(v)).join(', ');
+    const sql = `INSERT INTO \`${database}\`.\`${table}\` (${cols}) VALUES (${vals})`;
+    const result = await mysqlQuery(sql);
+    return { success: true, ...result, sql };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to insert row' };
+  }
+});
+
+ipcMain.handle('db-update-row', async (event, database, table, data, where) => {
+  try {
+    const entries = Object.entries(data).filter(([, v]) => v !== '__omit__' && v !== '');
+    if (entries.length === 0) return { success: false, error: 'No data to update' };
+    if (Object.keys(where).length === 0) return { success: false, error: 'No WHERE condition' };
+    const set = entries.map(([k, v]) => `\`${k}\`=${escapeSql(v)}`).join(', ');
+    const cond = Object.entries(where).map(([k, v]) => `\`${k}\`=${escapeSql(v)}`).join(' AND ');
+    const sql = `UPDATE \`${database}\`.\`${table}\` SET ${set} WHERE ${cond} LIMIT 1`;
+    const result = await mysqlQuery(sql);
+    return { success: true, ...result, sql };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to update row' };
+  }
+});
+
+ipcMain.handle('db-delete-row', async (event, database, table, where) => {
+  try {
+    if (Object.keys(where).length === 0) return { success: false, error: 'No WHERE condition' };
+    const cond = Object.entries(where).map(([k, v]) => `\`${k}\`=${escapeSql(v)}`).join(' AND ');
+    const sql = `DELETE FROM \`${database}\`.\`${table}\` WHERE ${cond} LIMIT 1`;
+    const result = await mysqlQuery(sql);
+    return { success: true, ...result, sql };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to delete row' };
+  }
+});
+
+ipcMain.handle('db-truncate-table', async (event, database, table) => {
+  try {
+    const sql = `TRUNCATE TABLE \`${database}\`.\`${table}\``;
+    const result = await mysqlQuery(sql);
+    return { success: true, ...result, sql };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to truncate table' };
+  }
+});
+
+ipcMain.handle('db-reset-auto-increment', async (event, database, table) => {
+  try {
+    const sql = `ALTER TABLE \`${database}\`.\`${table}\` AUTO_INCREMENT = 1`;
+    const result = await mysqlQuery(sql);
+    return { success: true, ...result, sql };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to reset auto-increment' };
+  }
+});
+
+ipcMain.handle('db-drop-table', async (event, database, table) => {
+  try {
+    const sql = `DROP TABLE IF EXISTS \`${database}\`.\`${table}\``;
+    const result = await mysqlQuery(sql);
+    return { success: true, ...result, sql };
+  } catch (e) {
+    return { success: false, error: e.error || e.message || 'Failed to drop table' };
+  }
+});
+
+ipcMain.handle('db-import-sql', async (event, database, filePath) => {
+  try {
+    const db = getMysqlClient();
+    if (!db) return { success: false, error: 'MySQL/MariaDB is not running' };
+
+    const args = getMysqlConnectionArgs();
+    if (!args) return { success: false, error: 'Could not determine MySQL connection' };
+
+    const fullArgs = [...args, '--force', database || ''].filter(Boolean);
+
+    return new Promise((resolve) => {
+      const proc = spawn(db.clientPath, fullArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+      const stream = fs.createReadStream(filePath);
+
+      const filter = new Transform({
+        transform(chunk, encoding, callback) {
+          const lines = chunk.toString().split('\n');
+          const filtered = lines.filter(line => !line.includes('GTID_PURGED')).join('\n');
+          callback(null, filtered);
+        }
+      });
+
+      stream.pipe(filter).pipe(proc.stdin);
+
+      let output = '';
+      proc.stdout.on('data', d => { output += d.toString(); });
+      proc.stderr.on('data', d => { output += d.toString(); });
+
+      proc.on('close', (code) => {
+        resolve({ success: true, output: output || 'Import completed' });
+      });
+
+      proc.on('error', (err) => resolve({ success: false, error: err.message }));
+    });
+  } catch (e) {
+    return { success: false, error: e.message || 'Failed to import SQL file' };
+  }
+});
+
+function getMysqldumpPath() {
+  const db = getMysqlClient();
+  if (!db) return null;
+
+  const dir = path.dirname(db.clientPath);
+  const candidates = [path.join(dir, 'mysqldump')];
+  if (PLATFORM === 'win32') {
+    candidates.push(path.join(dir, 'mysqldump.exe'));
+  }
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  try {
+    const result = execSync('which mysqldump', { encoding: 'utf8', timeout: 3000 }).trim();
+    if (result) return result;
+  } catch (e) { /* not in PATH */ }
+
+  return null;
+}
+
+ipcMain.handle('db-export-table', async (event, database, table) => {
+  try {
+    const db = getMysqlClient();
+    if (!db) return { success: false, error: 'MySQL/MariaDB is not running' };
+
+    const mysqldumpPath = getMysqldumpPath();
+    if (!mysqldumpPath) return { success: false, error: 'mysqldump not found' };
+
+    const connArgs = getMysqlConnectionArgs();
+    if (!connArgs) return { success: false, error: 'Could not determine MySQL connection' };
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export Table',
+      defaultPath: `${table}.sql`,
+      filters: [{ name: 'SQL', extensions: ['sql'] }]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'Export cancelled' };
+    }
+
+    const dumpArgs = [...connArgs, '--no-tablespaces', '--skip-comments', '--set-gtid-purged=OFF', '--databases', database, '--tables', table];
+
+    return new Promise((resolve) => {
+      const proc = spawn(mysqldumpPath, dumpArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+      const outStream = fs.createWriteStream(result.filePath);
+      proc.stdout.pipe(outStream);
+
+      let errOutput = '';
+      proc.stderr.on('data', d => { errOutput += d.toString(); });
+
+      proc.on('close', (code) => {
+        outStream.end();
+        if (code === 0) resolve({ success: true, filePath: result.filePath });
+        else resolve({ success: false, error: errOutput || `Export failed with code ${code}` });
+      });
+
+      proc.on('error', (err) => {
+        outStream.end();
+        resolve({ success: false, error: err.message });
+      });
+    });
+  } catch (e) {
+    return { success: false, error: e.message || 'Failed to export table' };
   }
 });
 
